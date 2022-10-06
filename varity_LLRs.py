@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import pandas as pd
 import re
 from xopen import xopen
 import os
@@ -24,8 +23,7 @@ def get_clinvar_entries(variant_dict: dict, clinvar_db: str):
     missense_pattern = re.compile("^p\\.\\w{3}\\d+\\w{3}$")
 
     with open(clinvar_db) as clinvar:
-        #header_info = clinvar.readline().strip().split("\t")
-        #clinvar_df = pd.DataFrame(columns=[header_info[2], header_info[6], header_info[24]])
+
         for line in clinvar:
             info = line.strip().split("\t")
             if (info[1] == "single nucleotide variant") and (missense_pattern.match(info[2].split(" ")[-1].strip("()"))) and ("Ter" not in info[2]) and ("no assertion" not in info[24]) and (info[6] not in ["Uncertain significance", "Conflicting interpretations of pathogenicity"]):
@@ -35,7 +33,7 @@ def get_clinvar_entries(variant_dict: dict, clinvar_db: str):
                     ref_set = "Positive"
                 elif "benign" in info[6].lower():
                     ref_set = "Negative"
-                #clinvar_df.loc[len(clinvar_df)] = [hgvsp, info[6], info[24]]
+                
                 if not gene_symbol in variant_dict:
                     variant_dict[gene_symbol] = {}
                     variant_dict[gene_symbol]["ref_set"] = []
@@ -44,10 +42,6 @@ def get_clinvar_entries(variant_dict: dict, clinvar_db: str):
                 variant_dict[gene_symbol]["GeneID"] = info[3]
 
     # Name (2), ClinicalSignificance (6), ClinSigSimple (7), ReviewStatus (24)
-
-    #clinvar_df.to_csv(gene_name + "_reference.csv", columns=clinvar_df.columns)
-
-    #return variant_dict
 
 
 
@@ -131,29 +125,31 @@ def get_varity_predictions(varity_predictions: str, prediction_dict: dict):
             prediction_dict[uniprot_id] = prediction_dict[uniprot_id] + [f"{hgvsp}\t{score}"]
 
 
-def make_refsets(variant_dict, id_mapping_dict, varity_ids, prediction_dict, output_directory, main_log):
-
-    os.chdir(output_directory)
+def filter_variants(variant_dict, id_mapping_dict, varity_ids, prediction_dict, min_ref, main_log):
 
     to_remove = []
 
     for gene in variant_dict:
-        if (variant_dict[gene]["ref_set"].count("Positive") >= 6) and (variant_dict[gene]["ref_set"].count("Negative") >= 6) and (variant_dict[gene]["GeneID"] in id_mapping_dict) and (gene in varity_ids) and (id_mapping_dict[variant_dict[gene]["GeneID"]] in prediction_dict):
-            with open(f"{gene}_reference.csv", "w") as output:
-                main_log.info(f"Writing to {gene}_reference.csv")
-                output.write("hgvsp\tClinical Significance\treferenceSet\tsource\tmaf\thom\n")
-                for variant in variant_dict[gene]:
-                    if variant != "ref_set" and variant != "GeneID":
-                        output.write("\t".join([variant] + variant_dict[gene][variant]) + "\n")
+        if (variant_dict[gene]["ref_set"].count("Positive") < min_ref) or (variant_dict[gene]["ref_set"].count("Negative") < min_ref):
+            main_log.info(f"Insufficient reference variants for {gene}")
+            to_remove.append(gene)
         elif (variant_dict[gene]["GeneID"] not in id_mapping_dict) or (gene not in varity_ids) or (id_mapping_dict[variant_dict[gene]["GeneID"]] not in prediction_dict):
             main_log.info(f"Varity predictions unavailable for {gene}")
-            to_remove.append(gene)
-        else:
-            main_log.info(f"Insufficient reference variants for {gene}")
             to_remove.append(gene)
 
     for gene in to_remove:
         variant_dict.pop(gene) 
+
+
+def make_refsets(variant_dict, id_mapping_dict, varity_ids, prediction_dict, main_log):
+
+    for gene in variant_dict:
+        with open(f"{gene}_reference.csv", "w") as output:
+            main_log.info(f"Writing to {gene}_reference.csv")
+            output.write("hgvsp\tClinical Significance\treferenceSet\tsource\tmaf\thom\n")
+            for variant in variant_dict[gene]:
+                if variant != "ref_set" and variant != "GeneID":
+                    output.write("\t".join([variant] + variant_dict[gene][variant]) + "\n")
 
 
 def make_maps(variant_dict, prediction_dict, varity_ids, id_mapping_dict, main_log):
@@ -165,8 +161,6 @@ def make_maps(variant_dict, prediction_dict, varity_ids, id_mapping_dict, main_l
             output.write("hgvsp\tscore\n")
             for prediction in prediction_dict[uniprot_id]:
                 output.write(prediction + "\n")
-
-
 
 
 def main(args):
@@ -182,6 +176,8 @@ def main(args):
 
     clinvar_db = args.clinvar
     pop_freq = args.gnomad
+    varity_supported_ids = args.varity_ids
+    varity_predictions = args.varity_predictions
 
     main_log_name = os.path.join(output_directory, "main.log")
     main_log = help_functions.logginginit("info", main_log_name)
@@ -194,12 +190,10 @@ def main(args):
     id_mapping_dict = uniprot_to_geneid(id_mapping)
 
     main_log.info(f"Getting varity supported ids")
-    varity_supported_ids = "/home/rothlab/skathirg/varity/varity_supported_ids.txt"
     varity_ids = get_varity_supported_ids(varity_supported_ids)
     main_log.info(f"{len(varity_ids)} varity supported ids")
 
     main_log.info(f"Getting varity predictions")
-    varity_predictions = "/home/rothlab/skathirg/varity/varity_all_predictions.txt"
     get_varity_predictions(varity_predictions, prediction_dict)
 
     main_log.info(f"Getting ClinVar variants from {clinvar_db}")
@@ -208,15 +202,15 @@ def main(args):
     main_log.info(f"Getting variant frequencies from {pop_freq}")
     get_frequencies(variant_dict, args, pop_freq)
 
-    beginning_length = len(variant_dict)
-    make_refsets(variant_dict, id_mapping_dict, varity_ids, prediction_dict, output_directory, main_log)
-    end_length = len(variant_dict)
-    removed = beginning_length - end_length
-    main_log.info(f"{removed} variants removed...")
+    filter_variants(variant_dict, id_mapping_dict, varity_ids, prediction_dict, args.min_ref, main_log)
+
+    os.chdir(output_directory)
+    
+    make_refsets(variant_dict, id_mapping_dict, varity_ids, prediction_dict, main_log)
 
     make_maps(variant_dict, prediction_dict, varity_ids, id_mapping_dict, main_log)
 
-    logging.flush()
+    main_log.shutdown()
 
 
 if __name__ == "__main__":
@@ -226,7 +220,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate reference sets for calcLLR function')
     parser.add_argument("--clinvar", help="Path to ClinVar variant summary file", type=str, default="variant_summary.txt")
     parser.add_argument("--gnomad", help="Path to GnomAD variant summary file", type=str, default="gnomad_frequencies.vcf.gz")
+    parser.add_argument("--varity_ids", help="List of VARITY supported ids", type=str, default="varity_supported_ids.txt")
+    parser.add_argument("--varity_predictions", help="VARITY predictions", type=str, default="varity_all_predictions.txt")
     parser.add_argument("--num_hom", help="GnomAD homozygote threshold", type=int, default=1)
+    parser.add_argument("--min_ref", help="Minimum number of reference pathogenic and benign variants ", type=int, default=6)
     parser.add_argument("--maf_cutoff", help="MAF threshold to be considered benign", type=float, default=0.001)
     parser.add_argument("-o", "--output", help="Output directory where reference files should be written", type=str)
     args = parser.parse_args()
@@ -267,16 +264,6 @@ if __name__ == "__main__":
 
 
 
-    # with open("varity_supported_ids", "r") as protein_ids:
-    #     for protein_id in protein_ids:
-    #         uniprot_id = protein_id.strip().split("\t")[0]
-
-    #         gene_id = id_mapping_dict[uniprot_id]
-
-    #         get_clinvar_entries(gene_id, clinvar_db)
-
-
-
 
 """
 
@@ -292,25 +279,6 @@ Allele|Consequence    |IMPACT  |SYMBOL|Gene         |Feature_type|Feature       
 
 ,#AlleleID (0),Type (1),Name (2),GeneID (3),GeneSymbol (4),ClinicalSignificance (6),ClinSigSimple,Assembly (16),Chromosome (18),Start (19),Stop (20),ReferenceAllele (21),AlternateAllele (22)
 
-need to remake id_mapping.tab
 
-P09769
-P09874
-P09912
-P0CG08
-
-# filter out multinucleotide variants
-# def filter_frequencies(pop_freq: str):
-
-#     frequencies = open("filtered_frequencies.vcf", "w")
-
-#     with xopen(pop_freq, "rt") as freqs:
-#         for line in freqs: 
-#             if ("#" not in line):
-#                 x = [(len(allele) != 1) for allele in line.strip().split("\t")[4].split(",")]
-#                 y = [(len(allele) != 1) for allele in line.strip().split("\t")[3].split(",")]
-#                 if not(any(x) or any(y)):
-#                     frequencies.write(line)
-#     frequencies.close()
 
 """
