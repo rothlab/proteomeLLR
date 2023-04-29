@@ -1,9 +1,7 @@
-# proteomeLLR
 This repository contains scripts to:
 1) Generate **reference variant sets** for all genes with VARITY predictions
 2) Add additional annotations to 
 3) Perform clustering
-
 
 ## Generating Reference Sets
 
@@ -26,9 +24,9 @@ You can run the script **varity_LLRs.py** to generate reference sets.
 	    --varity_predictions   Path to VARITY predictions
 	    -o, --output           Output directory where reference sets should be written
 	Optional arguments: 
-		--num_hom			   GnomAD homozygote threshold (default: 1)
-		--min_ref              Minimum number of reference pathogenic and benign variants (default: 11)    
-		--maf_cutoff           MAF threshold to be considered benign (default: 0.001)
+	    --num_hom              GnomAD homozygote threshold (default: 1)
+	    --min_ref              Minimum number of reference pathogenic and benign variants (default: 11)    
+	    --maf_cutoff           MAF threshold to be considered benign (default: 0.001)
 
 Once the reference sets are produced, you can modify the [calcLLR.R](https://github.com/rothlab/tileseqMave/blob/master/inst/scripts/calcLLR.R) script within TileseqMave to output the LLRs at 0.1 VARITY score intervals into a single output called LLR_intervals.csv. To do so, add the following code to the end of TileseqMave and update TileseqMave locally. 
 
@@ -36,3 +34,43 @@ Once the reference sets are produced, you can modify the [calcLLR.R](https://git
     cat(paste(strsplit(outprefix, "_")[[1]][1], ","), file="LLR_intervals.csv", append=TRUE)
     cat(interval_scores, file="LLR_intervals.csv", sep=",", append=TRUE)
     cat("\n", file="LLR_intervals.csv", append=TRUE)
+
+You can then write a quick script such as the one below to run this for all genes with reference sets: 
+
+    REFDIR=path_to_directory_with_reference_sets
+    REFS=($(ls $REFDIR | grep reference.csv))
+    cd $REFDIR
+    for REF in ${REFS[@]}
+    do
+	    GENE=$(echo $REF | sed 's/_reference.csv//')
+	    MAP=$(echo $REF | sed 's/_reference.csv/_map.csv/')
+	    echo "Running calcLLR for $GENE"
+	    tsm calcLLR $MAP $REF --kernel gaussian #can change parameters here as needed
+	done
+
+## Adding Additional Annotations
+
+Additional information can be added to the LLR_intervals.csv, such as the mode of inheritance of diseases associated with genes in the file or functional annotations for each gene. Two scripts have been written to add such annotations: **[add_functional_annotations.py](https://github.com/rothlab/proteomeLLR/blob/main/add_functional_annotations.py "add_functional_annotations.py")** and **[add_inheritance_annotations.py](https://github.com/rothlab/proteomeLLR/blob/main/add_inheritance_annotations.py "add_inheritance_annotations.py")**. 
+
+Example add_inheritance_annotations.py usage:
+
+    python add_inheritance_annotations.py -i path_to_input_csv -g path_to_gencc_file -o output_filename
+
+ - *path_to_input_csv* refers to the path of LLR_intervals.csv
+ - *path_to_gencc_file* refers to a GenCC TSV annotation file (found here https://search.thegencc.org/download)
+	 >**NOTE**: Modify the GenCC file to only include the 'gene_symbol', 'disease_title', 'classification_title' and 'moi_title' columns
+ - *output_filename* refers to the desired output filename
+
+Example add_inheritance_annotations.py usage:
+
+    python add_functional_annotations.py -i path_to_input_csv -g path_to_david_annotation_cluster_file -o output_filename
+
+ - *path_to_input_csv* refers to the path of LLR_intervals.csv
+ - *path_to_david_annotation_cluster_file* refers to the DAVID functional annotation output file (can be made here: https://david.ncifcrf.gov/tools.jsp)
+ - *output_filename* refers to the desired output filename 
+
+## Clustering
+
+The script [**clusterLLR.R**](https://github.com/rothlab/proteomeLLR/blob/main/clusterLLR.R) takes a csv with LLRs at 0.1 VARITY score intervals for a set of genes and will attempt to cluster the genes based on their LLR curves and output PCA and UMAP plots
+
+Additionally, it attempts to build a classification model using naive bayes to see if VARITY performs better for certain subgroups of genes (ex. inheritance, different functional sub classes of genes)
