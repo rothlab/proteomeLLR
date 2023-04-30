@@ -89,7 +89,7 @@ ad = inheritanceLLR[inheritanceLLR$Inheritance == "AD",]
 # Get 'signature' LLR curve for each mode of inheritance
 arLLRSignature = colMeans(ar[,2:12])
 adLLRSignature = colMeans(ad[,2:12])
-plot(arLLRSignature, adLLRSignature) # the signatures for AR and AD genes are similar
+plot(arLLRSignature, adLLRSignature, main="'Signature' LLR curves of AR vs AD genes") # the signatures for AR and AD genes are similar
 
 # Split data into train and test sets
 split <- sample(2, nrow(inheritanceLLR), replace = T, prob = c(0.8, 0.2))
@@ -119,9 +119,8 @@ for (i in 1:50){
                                   nrow(train[train$Inheritance == "AD",])/nrow(train), 
                                   nrow(train[train$Inheritance == "other",])/nrow(train)))
   actual = as.vector(train$Inheritance)
-  randomPredictionsTable = cbind(actual, randomPredictions)
-  randomClassifiedRate = c(randomClassifiedRate, nrow(randomPredictionsTable[randomPredictionsTable[,1] == 
-                                                             randomPredictionsTable[,2],])/nrow(train))
+  randomPredictionsTable = table(actual, randomPredictions)
+  randomClassifiedRate = c(randomClassifiedRate, sum(diag(randomPredictionsTable))/sum(randomPredictionsTable))
 }
 sprintf("The average classification rate with random predictions on training data: %f", mean(randomClassifiedRate))
 
@@ -148,22 +147,24 @@ filteredAnnotatedLLR = annotatedLLR[annotatedLLR$functional_cluster %in% names(g
 filteredAnnotatedLLR$functional_cluster <- as.factor(filteredAnnotatedLLR$functional_cluster)
 
 # Get 'signature' LLR curve for each functional activity cluster (with at least 10 genes)
-cluster1 = annotated_llrs[annotated_llrs$functional_cluster == 1,] # ion channel activity
-cluster2 = annotated_llrs[annotated_llrs$functional_cluster == 2,] # protein kinase activity
-cluster6 = annotated_llrs[annotated_llrs$functional_cluster == 6,] # iron binding
-cluster7 = annotated_llrs[annotated_llrs$functional_cluster == 7,] # neurotransmitter receptor activity
-cluster12 = annotated_llrs[annotated_llrs$functional_cluster == 12,] # DNA-binding
+cluster1 = filteredAnnotatedLLR[filteredAnnotatedLLR$functional_cluster == 1,] # ion channel activity
+cluster2 = filteredAnnotatedLLR[filteredAnnotatedLLR$functional_cluster == 2,] # protein kinase activity
+cluster6 = filteredAnnotatedLLR[filteredAnnotatedLLR$functional_cluster == 6,] # iron binding
+cluster7 = filteredAnnotatedLLR[filteredAnnotatedLLR$functional_cluster == 7,] # neurotransmitter receptor activity
+cluster12 = filteredAnnotatedLLR[filteredAnnotatedLLR$functional_cluster == 12,] # DNA-binding
 
 cluster1_fingerprint = colMeans(cluster1[,2:12])
 cluster2_fingerprint = colMeans(cluster2[,2:12])
 cluster6_fingerprint = colMeans(cluster6[,2:12])
 cluster7_fingerprint = colMeans(cluster7[,2:12])
 cluster12_fingerprint = colMeans(cluster12[,2:12])
-plot(x=names(cluster1_fingerprint), y=cluster1_fingerprint, xlab = "VARITY score bin", ylab = "LLR", type="l") 
+plot(x=names(cluster1_fingerprint), y=cluster1_fingerprint, xlab = "VARITY score bin", ylab = "LLR", type="l", main="Signature LLR curves of functionally-clustered genes") 
 lines(x=names(cluster2_fingerprint), y=cluster2_fingerprint, col = "pink") 
 lines(x=names(cluster6_fingerprint), y=cluster6_fingerprint, col = "red")
 lines(x=names(cluster7_fingerprint), y=cluster7_fingerprint, col = "blue")
 lines(x=names(cluster12_fingerprint), y=cluster12_fingerprint, col = "green")
+legend(x="topleft",legend=c("Ion Channel Activity", "Protein Kinase Activity", "Iron Binding", "Neurotransmitter Receptor Activity", "DNA-Binding"),
+       col=c("black", "pink", "red", "blue", "green"), lty=1, cex=0.8)
 # the signatures for the 5 functional activity clusters are similar
 
 # Split data into training and testing sets
@@ -197,9 +198,8 @@ for (i in 1:100){
                                     nrow(train[train$functional_cluster == 10,])/nrow(train),
                                     nrow(train[train$functional_cluster == 12,])/nrow(train)))
   actual = as.vector(train$functional_cluster)
-  randomPredictionsTable = cbind(actual, randomPredictions)
-  randomClassifiedRate = c(randomClassifiedRate, nrow(randomPredictionsTable[randomPredictionsTable[,1] == 
-                                                             randomPredictionsTable[,2],])/nrow(train))
+  randomPredictionsTable = table(actual, randomPredictions)
+  randomClassifiedRate = c(randomClassifiedRate, sum(diag(randomPredictionsTable))/sum(randomPredictionsTable))
 }
 sprintf("The average classification rate with random predictions on training data: %f", mean(randomClassifiedRate))
 
